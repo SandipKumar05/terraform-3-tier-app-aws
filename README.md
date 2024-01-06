@@ -1,3 +1,10 @@
+## Intro
+This is not the best method to deploy a 3-tier app.
+But to sake of learning I am deploying this in a traditional way without using any containers/ecs/eks/lambda
+
+## Architecture Diagram
+![Alt text](architecture.png)
+
 ## Installation steps
 
 1. Create an SSH key pair. Note: If you already have the key, ignore this step.
@@ -25,4 +32,7 @@
     terraform apply --var-file=$stage.tfvars
     ```
 
-## For More Information, Refer to the Presentation (PPT) and Respective Folder README
+
+Note:
+
+`More Information, Refer to the Presentation (PPT) and Respective Folder README`
