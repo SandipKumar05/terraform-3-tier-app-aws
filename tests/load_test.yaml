@@ -1,0 +1,12 @@
+config:
+  target: 'http://external-load-balancer-1458102786.us-east-1.elb.amazonaws.com'
+  phases:
+    - duration: 60  # 1 minute
+      arrivalRate: 5
+scenarios:
+  - flow:
+      - get:
+          url: '/'
+  - flow:
+      - get:
+          url: '/api/status'

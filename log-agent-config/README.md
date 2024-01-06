@@ -1,0 +1,1 @@
+# CloudWatch Agent Configuration for Sending Logs/Metrics

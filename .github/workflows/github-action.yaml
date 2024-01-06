@@ -1,0 +1,149 @@
+name: CI/CD Pipeline
+
+on:
+  repository_dispatch:
+  schedule:
+    - cron: '5 12 * * 0'
+
+jobs:
+  build-web-ami:
+    runs-on: ubuntu-latest
+    env:
+      app_name: "web"
+    steps:
+    - uses: hashicorp/setup-packer@main
+
+    - name: Build Artifact
+      env:
+        GITLAB_ACCESS_TOKEN: ${{ secrets.GITLAB_ACCESS_TOKEN }}
+        AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      run: |
+        set -x
+        git clone https://Sandip-kumar:$GITLAB_ACCESS_TOKEN@github.com:SandipKumar05/terraform-3-tier-app-aws.git
+        cd Sandip-kumar/packer
+        packer init $app_name-aws-ami.pkr.hcl
+        packer build -var gitlab_access_token=$GITLAB_ACCESS_TOKEN $app_name-aws-ami.pkr.hcl
+
+  build-app-ami:
+    runs-on: ubuntu-latest
+    env:
+      app_name: "api"
+    steps:
+    - uses: hashicorp/setup-packer@main
+
+    - name: Build Artifact
+      env:
+        GITLAB_ACCESS_TOKEN: ${{ secrets.GITLAB_ACCESS_TOKEN }}
+        AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      run: |
+        set -x
+        git clone https://Sandip-kumar:$GITLAB_ACCESS_TOKEN@github.com:SandipKumar05/terraform-3-tier-app-aws.git
+        cd Sandip-kumar/packer
+        packer init $app_name-aws-ami.pkr.hcl
+        packer build -var gitlab_access_token=$GITLAB_ACCESS_TOKEN $app_name-aws-ami.pkr.hcl
+
+  deploy-staging:
+    runs-on: ubuntu-latest
+    needs: [build-web-ami, build-app-ami]
+    env:
+      stage: "staging"
+    steps:
+    - uses: hashicorp/setup-terraform@v3
+    - name: Checkout Repo
+      env:
+        GITLAB_ACCESS_TOKEN: ${{ secrets.GITLAB_ACCESS_TOKEN }}
+      run: |
+        git clone https://Sandip-kumar:$GITLAB_ACCESS_TOKEN@github.com:SandipKumar05/terraform-3-tier-app-aws.git
+    - name: Terraform Plan
+      id: plan
+      env:
+        AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      run: |
+        cd Sandip-kumar/terraform
+        terraform init
+        terraform workspace select -or-create $stage
+        terraform plan -no-color --var-file=$stage.tfvars
+        terraform apply --var-file=staging.tfvars -auto-approve
+        sudo apt-get install -y awscli
+        export AWS_DEFAULT_REGION=us-east-1
+        aws autoscaling start-instance-refresh --auto-scaling-group-name api-asg > /dev/null 2>&1
+        aws autoscaling start-instance-refresh --auto-scaling-group-name web-asg > /dev/null 2>&1
+  
+  test-staging-url:
+    runs-on: ubuntu-latest
+    needs: [deploy-staging]
+    steps:
+    - name: test-urls
+      env:
+        web_url: ${{ vars.staging_web_url }}
+        api_url: ${{ vars.staging_api_url }}
+      run: |
+        #!/bin/bash
+        set -x
+        sleep 300
+        url_to_test=($web_url $api_url)
+
+        for url in ${url_to_test[@]}; do
+            echo $url
+            curl -sSf "$url" > /dev/null
+
+            if [ $? -eq 0 ]; then
+                echo "$url is reachable."
+            else
+                echo "$url is not reachable."
+                exit 1
+            fi
+        done
+  
+  deploy-production:
+    runs-on: ubuntu-latest
+    needs: [test-staging-url]
+    env:
+      stage: "production"
+    steps:
+    - uses: hashicorp/setup-terraform@v3
+    - name: Checkout Repo
+      env:
+        GITLAB_ACCESS_TOKEN: ${{ secrets.GITLAB_ACCESS_TOKEN }}
+      run: |
+        git clone https://Sandip-kumar:$GITLAB_ACCESS_TOKEN@github.com:SandipKumar05/terraform-3-tier-app-aws.git
+
+    - name: Terraform Plan
+      id: plan
+      env:
+        AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      run: |
+        cd Sandip-kumar/terraform
+        terraform init
+        terraform workspace select -or-create $stage
+        terraform plan -no-color --var-file=$stage.tfvars
+
+  test-production-url:
+    runs-on: ubuntu-latest
+    needs: [deploy-production]
+    env:
+      stage: "production"
+    steps:
+    - name: test-urls
+      env:
+        web_url: ${{ vars.prod_web_url }}
+        api_url: ${{ vars.prod_api_url }}
+      run: |
+        #!/bin/bash
+        sleep 300
+        url_to_test=($web_url $api_url)
+
+        for url in ${url_to_test[@]}; do
+            curl -sSf "$url" > /dev/null
+
+            if [ $? -eq 0 ]; then
+                echo "$url is reachable."
+            else
+                echo "$url is not reachable."
+                exit 1
+            fi
+        done
